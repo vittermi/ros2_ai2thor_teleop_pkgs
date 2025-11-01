@@ -6,4 +6,6 @@ house_generator = HouseGenerator(
 house, _ = house_generator.sample()
 house.validate(house_generator.controller)
 
+
+
 house.to_json("temp.json")
