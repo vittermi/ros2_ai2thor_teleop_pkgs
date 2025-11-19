@@ -1,2 +1,0 @@
-include procthor/databases/*.json
-include procthor/databases/asset_groups/*.json
