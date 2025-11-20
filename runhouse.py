@@ -1,14 +1,17 @@
 from dataclasses import dataclass
-import curses, time
+import curses, time, json, redis
 from procthor.generation import PROCTHOR10K_ROOM_SPEC_SAMPLER, HouseGenerator
 
 KEYMAP = {
-    ord('w'): "MoveAhead",
-    ord('s'): "MoveBack",
-    ord('a'): "MoveLeft",
-    ord('d'): "MoveRight",
-    ord('q'): "RotateLeft",
-    ord('e'): "RotateRight",
+    "MOVE_AHEAD":   "MoveAhead",
+    "MOVE_BACK":    "MoveBack",
+    "STRAFE_LEFT":  "MoveLeft",
+    "STRAFE_RIGHT": "MoveRight",
+    "ROTATE_LEFT":  "RotateLeft",
+    "ROTATE_RIGHT": "RotateRight",
+    "LOOK_UP":      "LookUp",
+    "LOOK_DOWN":    "LookDown",
+    "STOP":         None,       # special case; we’ll treat as "Pass"
 }
 
 @dataclass
@@ -27,40 +30,66 @@ class ProcThorApp:
         house.validate(self.hg.controller)
         self.controller = self.hg.controller
 
-    def handle_input(self, stdscr):
-        act = None
-        while True:
-            ch = stdscr.getch()
-            if ch == -1:
-                break
-            if ch in (3, 4, ord('x')):  # Ctrl-C, Ctrl-D, x
-                return "EXIT"
-            if ch in KEYMAP:
-                act = KEYMAP[ch]
-        return act or "Pass"
+        event = self.controller.step(
+            action="Initialize",
+            gridSize=0.25,
+            renderDepthImage=True,
+            renderInstanceSegmentation=False,
+        )
+
+        assert event.metadata["lastActionSuccess"], event.metadata.get("errorMessage", "")
+
+    def handle_input(self, command: str):
+        action_name = KEYMAP.get(command)
+        if action_name is None:
+            return "Pass"  # unsupported command → do nothing
+
+        return action_name
 
     def step(self, action):
         return self.controller.step(action=action)
 
     def run(self, stdscr):
-        curses.cbreak()
-        curses.noecho()
-        stdscr.nodelay(True)
-        stdscr.clear()
-        stdscr.addstr(0, 0, "Controls: w/a/s/d move, q/e rotate, x to exit")
-        stdscr.refresh()
+
+        r = redis.Redis(host="localhost", port=6379, db=0)
+        pubsub = r.pubsub()
+        pubsub.subscribe("ai2thor_commands")
+
+        delay = 0.05 
 
         self.setup()
+
+
         try:
-            delay = 1 / self.fps
             while True:
-                act = self.handle_input(stdscr) # this should get from topic
-                if act == "EXIT":
-                    break
+                msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
+
+                command = None
+
+                if msg is not None:
+                    try:
+                        payload = json.loads(msg["data"])
+                        command = payload.get("action")
+                    except Exception:
+                        command = None
+
+                if command is not None:
+                    act = self.handle_input(command)
+                else:
+                    act = "Pass" 
+
+              
                 ev = self.step(act)
-                stdscr.addstr(2, 0, f"Action: {act:<12} success={ev.metadata.get('lastActionSuccess')}   ")
+
+                stdscr.addstr(
+                    0, 0,
+                    f"Last command: {command or 'None':<12}  Action: {act:<12}  "
+                    f"success={ev.metadata.get('lastActionSuccess')}   "
+                )
                 stdscr.refresh()
+
                 time.sleep(delay)
+
         finally:
             try:
                 self.controller.stop()
