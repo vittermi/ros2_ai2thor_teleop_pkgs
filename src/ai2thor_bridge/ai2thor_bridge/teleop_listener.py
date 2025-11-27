@@ -1,6 +1,9 @@
 import rclpy
 from rclpy.node import Node
 
+import json
+import redis
+
 from ai2thor_msgs.msg import TeleopCmd   # same message your teleop publishes
 
 
@@ -21,10 +24,43 @@ class TeleopListener(Node):
 
         self.get_logger().info(f'Subscribed to topic: {topic_name}')
 
+
+        self.redis_channel = 'ai2thor_commands'
+
+        try:
+            self._redis = redis.Redis(host='localhost', port=6379, db=0)
+
+            self._redis.ping()
+            self.get_logger().info(
+                f'Subscribed to {topic_name} and connected to Redis channel "{self.redis_channel}"'
+            )
+        except Exception as e:
+            self.get_logger().error(f'Failed to connect to Redis: {e}')
+            self._redis = None
+
+
     
     def listener_callback(self, msg: TeleopCmd):
         
-        print(f'[TeleopCmd] action="{msg.action}"  magnitude={msg.magnitude:.3f}')
+        self.get_logger().info(
+            f'Received TeleopCmd: action="{msg.action}", magnitude={msg.magnitude:.3f}'
+        )
+
+        if self._redis is None:
+            self.get_logger().warn('Redis connection not available, skipping publish.')
+            return
+
+        payload = {
+            'action': msg.action,
+            'magnitude': float(msg.magnitude),
+        }
+
+        try:
+            serialized = json.dumps(payload)
+            self._redis.publish(self.redis_channel, serialized)
+        except Exception as e:
+            self.get_logger().error(f'Failed to publish to Redis: {e}')
+
 
 
 def main(args=None):

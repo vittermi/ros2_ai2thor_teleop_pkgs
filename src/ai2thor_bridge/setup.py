@@ -11,10 +11,13 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'redis',
+    ],
     zip_safe=True,
-    maintainer='vittorio',
-    maintainer_email='vittorio.ermini@studenti.unimi.it',
+    maintainer='-',
+    maintainer_email='-',
     description='Bridge components that allow ai2thor to communicate with ros2',
     license='Apache-2.0',
     extras_require={
@@ -25,6 +28,7 @@ setup(
     entry_points={
         'console_scripts': [
             'teleop_listener = ai2thor_bridge.teleop_listener:main',
+            'odom_adapter = ai2thor_bridge.odom_adapter:main',
         ],
     },
 )
