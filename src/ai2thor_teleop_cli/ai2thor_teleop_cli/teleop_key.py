@@ -94,7 +94,7 @@ class TeleopKey(Node):
         self.get_logger().info("Reading from keyboard. Press 'k' or Ctrl-C to quit.")
         try:
             while rclpy.ok():
-                key = getch_blocking()   # your existing function
+                key = getch_blocking().lower()  # your existing function
                 if key == 'k' or key == '\x03':  # 'k' or Ctrl-C byte decoded
                     break
                 if key in KEY_BINDINGS:
