@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-import curses, time, json, redis, logging
+import curses, time, json, redis, logging, base64
+import numpy as np
 from procthor.generation import PROCTHOR10K_ROOM_SPEC_SAMPLER, HouseGenerator
 
 KEYMAP = {
@@ -42,7 +43,7 @@ class ProcThorApp:
 
         assert event.metadata["lastActionSuccess"], event.metadata.get("errorMessage", "")
 
-        self.redis = redis.Redis(host="localhost", port=6379, db=0)
+        self._redis = redis.Redis(host="localhost", port=6379, db=0)
         
         
     def handle_input(self, command: str):
@@ -56,35 +57,64 @@ class ProcThorApp:
     def performAction(self, action):
         return self.controller.step(action=action)
     
-    
-    def publishData(self, event):
-        if not hasattr(self, "redis") or self.redis is None:
-            logger.warning("publishData called but self.pubsub is not set.")
+    def publish_pose_odom(self, event):
+        if not hasattr(self, "redis") or self._redis is None:
+            logger.warning("publish_pose_odom called but self.redis is not set.")
             return
 
         md = event.metadata or {}
         agent = md.get("agent", {})
 
         payload = {
-            "timestamp": time.time(),                     
-            "sequenceId": md.get("sequenceId"),         
-            "position": agent.get("position"),       # {x, y, z}
-            "rotation": agent.get("rotation"),       # {x, y, z} (deg)
+            "timestamp": time.time(),
+            "sequenceId": md.get("sequenceId"),
+            "position": agent.get("position"),        # {x, y, z}
+            "rotation": agent.get("rotation"),        # {x, y, z} (degrees)
             "cameraHorizon": agent.get("cameraHorizon"),
         }
 
         try:
             serialized = json.dumps(payload, default=float)
-            self.redis.publish("ai2thor_pose_sensors", serialized)
+            self._redis.publish("ai2thor_pose_sensors", serialized)
         except Exception as e:
-            logger.error(f"Failed to publish agent state to Redis: {e}")
+            logger.error(f"Failed to publish pose data to Redis: {e}")
+
+    
+    
+    def publish_depth_data(self, event):
+        if not hasattr(self, "redis") or self._redis is None:
+            logger.warning("publish_depth_data called but self.redis is not set.")
+            return
+
+        depth_frame = getattr(event, "depth_frame", None)
+        if depth_frame is None:
+            logger.warning("No depth_frame in event — skipping depth publish.")
+            return
+        
+        try:
+            depth_bytes = depth_frame.astype(np.float32).tobytes()
+            depth_b64 = base64.b64encode(depth_bytes).decode("utf-8")
+            payload = {
+                "timestamp": time.time(),
+                "height": depth_frame.shape[0],
+                "width": depth_frame.shape[1],
+                "encoding": "32FC1",
+                "dtype": "float32",
+                "data": depth_b64,
+            }
+
+            serialized = json.dumps(payload, default=float)
+            self._redis.publish("ai2thor_depth_image", serialized)
+        except Exception as e:
+            logger.error(f"Failed to publish depth data to Redis: {e}")
+
 
 
     def run(self, stdscr):
 
         self.setup()
 
-        pubsub = self.redis.pubsub()
+        pubsub = self._redis.pubsub()
         pubsub.subscribe("ai2thor_commands")
         logger.info("Subscribed to ai2thor_commands")
 
@@ -107,10 +137,10 @@ class ProcThorApp:
                 else:
                     act = "Pass" 
 
-              
                 event = self.performAction(act)
 
-                self.publishData(event)
+                self.publish_pose_odom(event)
+                self.publish_depth_data(event)
 
                 stdscr.addstr(
                     0, 0,
