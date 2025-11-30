@@ -58,7 +58,7 @@ class ProcThorApp:
         return self.controller.step(action=action)
     
     def publish_pose_odom(self, event):
-        if not hasattr(self, "redis") or self._redis is None:
+        if not hasattr(self, "_redis") or self._redis is None:
             logger.warning("publish_pose_odom called but self.redis is not set.")
             return
 
@@ -82,7 +82,7 @@ class ProcThorApp:
     
     
     def publish_depth_data(self, event):
-        if not hasattr(self, "redis") or self._redis is None:
+        if not hasattr(self, "_redis") or self._redis is None:
             logger.warning("publish_depth_data called but self.redis is not set.")
             return
 
