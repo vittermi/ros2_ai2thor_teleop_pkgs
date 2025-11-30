@@ -6,8 +6,10 @@ import threading
 import json
 import base64
 import numpy as np
+import math
 
 from sensor_msgs.msg import Image
+from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import Header
 
 
@@ -19,15 +21,18 @@ class DepthImageAdapter(Node):
         self.declare_parameter('redis_host', 'localhost')
         self.declare_parameter('redis_port', 6379)
         self.declare_parameter('depth_topic', '/depth/image_raw')
+        self.declare_parameter('camera_info_topic', '/depth_camera_info')
         self.declare_parameter('frame_id', 'camera_link')
 
         self.redis_channel = self.get_parameter('redis_channel').value
         self.redis_host = self.get_parameter('redis_host').value
         self.redis_port = self.get_parameter('redis_port').value
         self.depth_topic = self.get_parameter('depth_topic').value
+        self.camera_info_topic = self.get_parameter('camera_info_topic').value
         self.frame_id = self.get_parameter('frame_id').value
 
         self.publisher = self.create_publisher(Image, self.depth_topic, 10)
+        self.camera_info_pub = self.create_publisher(CameraInfo, self.camera_info_topic, 10)
 
         try:
             self._redis = redis.Redis(host=self.redis_host, port=self.redis_port, db=0)
@@ -74,10 +79,14 @@ class DepthImageAdapter(Node):
         except Exception as e:
             self.get_logger().warn(f"Depth payload parsing error: {e}")
             return
+        
+        stamp = self.get_clock().now().to_msg()
+        
+        self._handle_camera_info(width, height, stamp, self.frame_id)
 
         msg = Image()
         msg.header = Header()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.stamp = stamp
         msg.header.frame_id = self.frame_id
 
         msg.height = height
@@ -88,6 +97,38 @@ class DepthImageAdapter(Node):
         msg.data = raw_bytes
 
         self.publisher.publish(msg)
+
+
+    def _handle_camera_info(self, width: int, height: int, stamp, frame_id: str):
+
+        fov_deg = 90.0
+        fov_rad = math.radians(fov_deg)
+        fx = fy = width / (2.0 * math.tan(fov_rad / 2.0))
+        cx = width / 2.0
+        cy = height / 2.0
+
+        msg = CameraInfo()
+        msg.header.stamp = stamp
+        msg.header.frame_id = frame_id
+        msg.width = width
+        msg.height = height
+        msg.distortion_model = "plumb_bob"
+        msg.d = [0.0, 0.0, 0.0, 0.0, 0.0]  # No distortion
+
+        msg.k = [fx, 0.0, cx,
+                0.0, fy, cy,
+                0.0, 0.0, 1.0]
+
+        msg.r = [1.0, 0.0, 0.0,
+                0.0, 1.0, 0.0,
+                0.0, 0.0, 1.0]
+
+        msg.p = [fx, 0.0, cx, 0.0,
+                0.0, fy, cy, 0.0,
+                0.0, 0.0, 1.0, 0.0]
+
+        self.camera_info_pub.publish(msg)
+
 
     def destroy_node(self):
         self._stop_event.set()

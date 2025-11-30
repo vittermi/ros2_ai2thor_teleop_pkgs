@@ -10,6 +10,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/ai2thor_bridge/launch', ['launch/ai2thor_tf_depth_bridge.launch.py']),
     ],
     install_requires=[
         'setuptools',
@@ -29,6 +30,8 @@ setup(
         'console_scripts': [
             'teleop_listener = ai2thor_bridge.teleop_listener:main',
             'odom_adapter = ai2thor_bridge.odom_adapter:main',
+            'depth_image_adapter = ai2thor_bridge.depth_image_adapter:main',
         ],
     },
+
 )
