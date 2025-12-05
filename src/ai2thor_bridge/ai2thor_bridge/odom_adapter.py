@@ -3,19 +3,18 @@ import math
 import threading
 
 import redis
-import rclpy
-from rclpy.node import Node
+import rclpy # type: ignore
+from rclpy.node import Node # type: ignore 
 
-from nav_msgs.msg import Odometry
-from geometry_msgs.msg import TransformStamped
-from tf2_ros import TransformBroadcaster
+from nav_msgs.msg import Odometry # type: ignore
+from geometry_msgs.msg import TransformStamped # type: ignore
+from tf2_ros import TransformBroadcaster # type: ignore
 
 from ai2thor_bridge.odom_noise_model import OdomNoiseModel
 
 
 # check math on ros2 docs (in the quaternion section)
-def yaw_deg_to_quaternion(yaw_deg: float):
-    yaw_rad = math.radians(yaw_deg)
+def yaw_rad_to_quaternion(yaw_rad: float):
     half_yaw = yaw_rad * 0.5
     qz = math.sin(half_yaw)
     qw = math.cos(half_yaw)
@@ -33,7 +32,7 @@ class Ai2ThorOdomAdapter(Node):
         self.declare_parameter('redis_port', 6379)
         self.declare_parameter('redis_channel', 'ai2thor_pose_sensors')
         self.declare_parameter('odom_frame', 'odom')
-        self.declare_parameter('base_frame', 'base_link')
+        self.declare_parameter('base_frame', 'base_footprint')
 
         self.redis_host = self.get_parameter('redis_host').get_parameter_value().string_value
         self.redis_port = self.get_parameter('redis_port').get_parameter_value().integer_value
@@ -95,9 +94,12 @@ class Ai2ThorOdomAdapter(Node):
         try:
             t = float(payload.get('timestamp', 0.0))
             pos = payload['position']
-            x, y, z = float(pos.get('x', 0.0)), float(pos.get('y', 0.0)), float(pos.get('z', 0.0))
+            sim_x, sim_y, sim_z = float(pos.get('x', 0.0)), float(pos.get('y', 0.0)), float(pos.get('z', 0.0))
+
             rot = payload['rotation']
-            yaw = float(rot.get('y', 0.0)) # roll and pitch always approximately 0 for LoCoBot in ai2thor
+            sim_yaw_deg = float(rot.get('y', 0.0));
+
+            x, y, z, yaw = self._convert_sim_pose_to_ros(sim_x, sim_y, sim_z, sim_yaw_deg)
         except Exception as e:
             self.get_logger().warn(f'Invalid pose payload: {e}')
             return
@@ -111,7 +113,7 @@ class Ai2ThorOdomAdapter(Node):
         }
 
         if self._last_state is not None:
-            vx, vy, vz, wz = self.noise_model.compute_noisy_velocities(self._last_state, current_state)
+            vx, vy, vz, wz = self.noise_model.compute_velocities(self._last_state, current_state)
         else:
             vx = vy = vz = wz = 0.0
 
@@ -130,6 +132,14 @@ class Ai2ThorOdomAdapter(Node):
         self._last_state = current_state
 
 
+    def _convert_sim_pose_to_ros(self, sim_x, sim_y, sim_z, sim_yaw_deg):
+        x = sim_z
+        y = -sim_x
+        z = 0.0
+        yaw = -math.radians(sim_yaw_deg)
+
+        return x, y, z, yaw
+
 
     def _set_odom_data(self, odom, now, x, y, z, yaw, vx, vy, vz, wz):
         odom.header.stamp = now
@@ -140,7 +150,7 @@ class Ai2ThorOdomAdapter(Node):
         odom.pose.pose.position.y = y
         odom.pose.pose.position.z = z
 
-        qx, qy, qz, qw = yaw_deg_to_quaternion(yaw)
+        qx, qy, qz, qw = yaw_rad_to_quaternion(yaw)
         odom.pose.pose.orientation.x = qx
         odom.pose.pose.orientation.y = qy
         odom.pose.pose.orientation.z = qz

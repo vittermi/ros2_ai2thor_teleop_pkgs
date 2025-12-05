@@ -39,6 +39,30 @@ class OdomNoiseModel:
         wz = (noisy_rot1 + noisy_rot2) / dt
 
         return vx, vy, vz, wz
+    
+    def compute_velocities(self, prev: dict, curr: dict):
+        dt = curr["t"] - prev["t"]
+        if dt <= 0.0:
+            return 0.0, 0.0, 0.0, 0.0
+        
+        x1, y1, theta1 = prev["x"], prev["y"], prev["yaw"]
+        x2, y2, theta2 = curr["x"], curr["y"], curr["yaw"]
+
+        dx = x2 - x1
+        dy = y2 - y1
+        speed = math.sqrt(dx**2 + dy**2)
+        dtheta = self._wrap_angle(theta2 - theta1)
+
+        vx = (dx*math.cos(theta1) + dy*math.sin(theta1)) / dt
+        vy = (-dx*math.sin(theta1) + dy*math.cos(theta1)) / dt
+        vz = 0.0
+        wz = dtheta / dt
+
+        return vx, vy, vz, wz
+
+
+    def _wrap_angle(self, a):
+        return (a + math.pi) % (2*math.pi) - math.pi
 
     def get_last_stddevs(self):
         return self._last_stddevs

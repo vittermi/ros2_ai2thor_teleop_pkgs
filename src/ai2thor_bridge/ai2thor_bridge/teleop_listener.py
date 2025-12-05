@@ -1,5 +1,5 @@
-import rclpy
-from rclpy.node import Node
+import rclpy # type: ignore 
+from rclpy.node import Node # type: ignore
 
 import json
 import redis
