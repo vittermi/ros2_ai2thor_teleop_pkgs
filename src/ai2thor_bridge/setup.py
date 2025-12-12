@@ -11,7 +11,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/ai2thor_bridge/launch', ['launch/ai2thor_tf_depth_bridge.launch.py']),
-        ('share/ai2thor_bridge/config', ['config/slam_params.yaml']),
+        ('share/ai2thor_bridge/config', ['config/nav2_params.yaml']),
 
         
     ],

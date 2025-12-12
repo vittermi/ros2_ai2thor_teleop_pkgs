@@ -6,6 +6,67 @@ from launch_ros.substitutions import FindPackageShare
 from launch.substitutions import PathJoinSubstitution
 
 def generate_launch_description():
+    
+    nav2_params = PathJoinSubstitution([
+        FindPackageShare('ai2thor_bridge'),
+        'config',
+        'nav2_params.yaml'
+    ])
+
+    bt_navigator = LifecycleNode(
+        package='nav2_bt_navigator',
+        executable='bt_navigator',
+        name='bt_navigator',
+        namespace='',
+        output='screen',
+        parameters=[nav2_params],
+    )
+
+    planner_server = LifecycleNode(
+        package='nav2_planner',
+        executable='planner_server',
+        name='planner_server',
+        namespace='',
+        output='screen',
+        parameters=[nav2_params],
+    )
+
+    controller_server = LifecycleNode(
+        package='nav2_controller',
+        executable='controller_server',
+        name='controller_server',
+        namespace='',
+        output='screen',
+        parameters=[nav2_params],
+    )
+
+    behavior_server = LifecycleNode(
+        package='nav2_behaviors',
+        executable='behavior_server',
+        name='behavior_server',
+        namespace='',
+        output='screen',
+        parameters=[nav2_params],
+    )
+
+    waypoint_follower = LifecycleNode(
+        package='nav2_waypoint_follower',
+        executable='waypoint_follower',
+        name='waypoint_follower',
+        namespace='',
+        output='screen',
+        parameters=[nav2_params],
+    )
+
+    lifecycle_manager = Node(
+        package='nav2_lifecycle_manager',
+        executable='lifecycle_manager',
+        name='lifecycle_manager_navigation',
+        output='screen',
+        parameters=[nav2_params],
+    )
+
+
     return LaunchDescription([
         # Static TF: base_link → camera_link (z = 0.675 m) from ai2thor docs
         Node(
@@ -94,8 +155,31 @@ def generate_launch_description():
                 ('/odom_info', '/odom'),
                 ('/rgb/camera_info', '/depth/camera_info')
             ]
-        )
+        ),
 
+        Node(
+            package='depthimage_to_laserscan',
+            executable='depthimage_to_laserscan_node',
+            name='depth_to_scan',
+            output='screen',
+            parameters=[{
+                'output_frame': 'camera_link',
+                'range_min': 0.3,
+                'range_max': 5.0,
+                'scan_time': 0.033,
+                'scan_height': 10,
+            }],
+            remappings=[
+                ('depth', '/depth/image_raw'),
+                ('depth_camera_info', '/depth/camera_info'),
+                ('scan', '/scan')
+            ]
+        ),
 
-
+        controller_server,
+        planner_server,
+        bt_navigator,
+        behavior_server,
+        waypoint_follower,
+        lifecycle_manager,
     ])
