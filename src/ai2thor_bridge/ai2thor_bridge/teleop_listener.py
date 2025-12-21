@@ -4,7 +4,7 @@ from rclpy.node import Node # type: ignore
 import json
 import redis
 
-from ai2thor_msgs.msg import TeleopCmd   # same message your teleop publishes
+from ai2thor_msgs.msg import TeleopCmd 
 
 
 class TeleopListener(Node):

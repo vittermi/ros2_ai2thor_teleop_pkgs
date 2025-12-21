@@ -11,7 +11,7 @@ import math
 from sensor_msgs.msg import Image # type: ignore
 from sensor_msgs.msg import CameraInfo # type: ignore
 from std_msgs.msg import Header # type: ignore
-from builtin_interfaces.msg import Time
+from builtin_interfaces.msg import Time # type: ignore
 
 
 class DepthImageAdapter(Node):
