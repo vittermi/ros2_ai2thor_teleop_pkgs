@@ -34,6 +34,7 @@ setup(
             'teleop_listener = ai2thor_bridge.teleop_listener:main',
             'odom_adapter = ai2thor_bridge.odom_adapter:main',
             'depth_image_adapter = ai2thor_bridge.depth_image_adapter:main',
+            'cmd_vel_adapter = ai2thor_bridge.cmd_vel_adapter:main',
         ],
     },
 
