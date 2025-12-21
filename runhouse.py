@@ -4,17 +4,13 @@ import numpy as np
 from procthor.generation import PROCTHOR10K_ROOM_SPEC_SAMPLER, HouseGenerator
 from ai2thor.controller import Controller
 
-KEYMAP = {
-    "MOVE_AHEAD":   "MoveAhead",
-    "MOVE_BACK":    "MoveBack",
-    "STRAFE_LEFT":  "MoveLeft",
-    "STRAFE_RIGHT": "MoveRight",
-    "ROTATE_LEFT":  "RotateLeft",
-    "ROTATE_RIGHT": "RotateRight",
-    "LOOK_UP":      "LookUp",
-    "LOOK_DOWN":    "LookDown",
-    "STOP":         None, 
-}
+
+MOVE_ACTIONS = {"MoveAhead", "MoveBack", "MoveLeft", "MoveRight"}
+ROTATE_ACTIONS = {"RotateLeft", "RotateRight"}
+
+
+WARMUP_IMAGE_FRAMES = 20          # publish images for first N iterations even if Pass
+IDLE_IMAGE_PERIOD_S = 1.0         # after warmup, publish images at most once per second when Pass
 
 logger = logging.getLogger(__name__)
 
@@ -62,17 +58,23 @@ class ProcThorApp:
 
         self._redis = redis.Redis(host="localhost", port=6379, db=0)
         
-        
-    def handle_input(self, command: str):
-        action_name = KEYMAP.get(command)
-        if action_name is None:
-            return "Pass" 
-
-        return action_name
     
 
-    def performAction(self, action):
-        return self.controller.step(action=action)
+    def performAction(self, action: str, magnitude: float | None = None):
+
+        if magnitude is None:
+            return self.controller.step(action=action)
+
+        if action in MOVE_ACTIONS:
+            return self.controller.step(action=action, moveMagnitude=float(magnitude))
+
+        if action in ROTATE_ACTIONS:
+            return self.controller.step(action=action, degrees=float(magnitude))
+
+        raise ValueError(
+            f"Unsupported action '{action}' for magnitude-based execution. "
+            f"Known move={sorted(MOVE_ACTIONS)}, rotate={sorted(ROTATE_ACTIONS)}"
+        )
     
     
     def publish_pose_odom(self, event, timestamp):
@@ -167,32 +169,52 @@ class ProcThorApp:
         pubsub.subscribe("ai2thor_commands")
         logger.info("Subscribed to ai2thor_commands")
 
+        warmup_remaining = WARMUP_IMAGE_FRAMES
+        last_idle_image_pub = 0.0
+
         try:
+            # TODO implementare push a hz predefiniti, non "ogni volta che succede qualcosa"
             while True:
                 msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
 
                 command = None
+                magnitude = None
 
                 if msg is not None:
                     try:
                         payload = json.loads(msg["data"])
                         command = payload.get("action")
+                        magnitude = payload.get("magnitude")
                     except Exception:
                         logger.exception("Failed to parse pubsub message")
                         command = None
 
                 if command is not None:
-                    act = self.handle_input(command)
+                    act = command
                 else:
                     act = "Pass" 
 
-                event = self.performAction(act)
+                event = self.performAction(act, magnitude)
 
                 timestamp = time.time()
 
                 self.publish_pose_odom(event, timestamp)
-                self.publish_depth_data(event, timestamp)
-                self.publish_rgb_data(event, timestamp)
+
+
+                publish_images = False
+                if act != "Pass":
+                    publish_images = True
+                elif warmup_remaining > 0:
+                    publish_images = True
+                    warmup_remaining -= 1
+                else:
+                    if (timestamp - last_idle_image_pub) >= IDLE_IMAGE_PERIOD_S:
+                        publish_images = True
+                        last_idle_image_pub = timestamp
+
+                if publish_images:
+                    self.publish_depth_data(event, timestamp)
+                    self.publish_rgb_data(event, timestamp)
 
                 stdscr.addstr(
                     0, 0,
