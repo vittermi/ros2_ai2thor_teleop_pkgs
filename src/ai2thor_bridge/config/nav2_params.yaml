@@ -17,42 +17,33 @@ bt_navigator:
 
 controller_server:
   ros__parameters:
-    allow_reversing: false
     use_sim_time: false
+    controller_frequency: 10.0  # optional: match your sim loop (10 Hz). Example default is often 20. :contentReference[oaicite:2]{index=2}
+
     controller_plugins: ["FollowPath"]
 
     FollowPath:
-      plugin: "dwb_core::DWBLocalPlanner"
-      debug_trajectory_details: false
+      plugin: "nav2_rotation_shim_controller::RotationShimController"  # :contentReference[oaicite:3]{index=3}
 
-      # Robot kinematics (tune to match your AI2-THOR motion)
-      min_vel_x: 0.0
-      max_vel_x: 0.4
-      min_vel_y: 0.0
-      max_vel_y: 0.0
-      max_vel_theta: 1.0
-      min_speed_xy: 0.0
-      max_speed_xy: 0.4
-      min_speed_theta: 0.0
+      primary_controller: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"  # :contentReference[oaicite:4]{index=4}
 
-      acc_lim_x: 0.4
-      acc_lim_y: 0.0
-      acc_lim_theta: 1.0
+      angular_dist_threshold: 0.785   # rad (~45deg). If heading error > this, rotate in place first.
+      rotate_to_heading_angular_vel: 0.8  # rad/s (cap for rotate-in-place)
 
-      # Critic plugins and weights (good starting point)
-      critics:
-        - RotateToGoal
-        - Oscillation
-        - BaseObstacle
-        - GoalAlign
-        - PathAlign
-        - PathDist
-        - GoalDist
-      BaseObstacle.scale: 0.02
-      PathAlign.scale: 32.0
-      GoalAlign.scale: 24.0
-      PathDist.scale: 32.0
-      GoalDist.scale: 24.0
+      rotate_to_goal_heading: true
+      goal_yaw_tolerance: 0.25  # rad (~14deg), tune with your discrete yaw steps
+
+      desired_linear_vel: 0.25
+      max_linear_accel: 0.4
+      max_angular_accel: 1.0
+      lookahead_dist: 0.6
+      min_lookahead_dist: 0.3
+      max_lookahead_dist: 0.9
+
+      use_rotate_to_heading: true
+      rotate_to_heading_min_angle: 0.785   # rad (~45deg)
+      rotate_to_heading_angular_vel: 0.8
+
 
 planner_server:
   ros__parameters:
