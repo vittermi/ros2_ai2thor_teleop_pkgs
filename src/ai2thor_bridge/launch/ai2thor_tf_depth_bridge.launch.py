@@ -109,6 +109,13 @@ def generate_launch_description():
         ),
 
         Node(
+            package='ai2thor_bridge',
+            executable='cmd_vel_adapter',
+            name='cmd_vel_adapter',
+            output='screen',
+        ),
+
+        Node(
             package='rtabmap_slam',
             executable='rtabmap',
             name='rtabmap',
@@ -129,8 +136,8 @@ def generate_launch_description():
                 'subscribe_imu': False,
 
                 'approx_sync': True,
-                'sync_queue_size': 10,
-                'topic_queue_size': 10,
+                'sync_queue_size': 30,
+                'topic_queue_size': 30,
 
                 'RGBD/CreateOccupancyGrid': 'true',
                 'Grid/FromDepth': 'true',
@@ -140,13 +147,15 @@ def generate_launch_description():
 
                 'Grid/NormalsSegmentation': 'false',
                 'Grid/MinGroundHeight': '-0.10',   
-                'Grid/MaxGroundHeight': '0.30',  
+                'Grid/MaxGroundHeight': '0.10',  
 
                 'Grid/MaxObstacleHeight': '1.5',   
 
                 'Grid/CellSize': '0.1',          
-                'Grid/NoiseFilteringRadius': '0',
-                'Grid/NoiseFilteringMinNeighbors': '0',
+                'Grid/NoiseFilteringRadius': '0.2',
+                'Grid/NoiseFilteringMinNeighbors': '2',
+
+                'Rtabmap/DetectionRate': '5.0',
 
                 'map_always_update': True,
             }],
@@ -164,10 +173,10 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'output_frame': 'camera_link',
-                'range_min': 0.3,
-                'range_max': 5.0,
+                'range_min': 0.1,
+                'range_max': 1.0,
                 'scan_time': 0.033,
-                'scan_height': 10,
+                'scan_height': 200,
             }],
             remappings=[
                 ('depth', '/depth/image_raw'),

@@ -26,8 +26,8 @@ class CmdVelAdapter(Node):
 
         self.declare_parameter('topic_name', '/cmd_vel')
         self.declare_parameter("tick_frequency_hz", 10.0)
-        self.declare_parameter("move_threshold_m", 0.50)
-        self.declare_parameter("yaw_threshold_deg", 2.0)
+        self.declare_parameter("move_threshold_m", 0.5)
+        self.declare_parameter("yaw_threshold_deg", 1.0)
         self.declare_parameter("linear_deadband", 1e-3)
         self.declare_parameter("angular_deadband", 1e-3)
         self.declare_parameter("enable_strafe", False)
