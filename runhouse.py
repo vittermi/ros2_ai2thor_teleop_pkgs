@@ -4,6 +4,8 @@ import numpy as np
 from procthor.generation import PROCTHOR10K_ROOM_SPEC_SAMPLER, HouseGenerator
 from ai2thor.controller import Controller
 
+from redis_image_codec import RedisImageCodec # type: ignore
+
 
 MOVE_ACTIONS = {"MoveAhead", "MoveBack", "MoveLeft", "MoveRight"}
 ROTATE_ACTIONS = {"RotateLeft", "RotateRight"}
@@ -25,9 +27,10 @@ class ProcThorApp:
 
 
     def setup(self):
+
         self.controller = Controller(
-            width=800,
-            height=600,
+            width=300,
+            height=300,
             commit_id="391b3fae4d4cc026f1522e5acf60953560235971", 
             scene="Procedural",
             quality="Low"
@@ -58,6 +61,15 @@ class ProcThorApp:
 
         self._redis = redis.Redis(host="localhost", port=6379, db=0)
         
+        self._codec = RedisImageCodec(
+            resize=144,  
+            jpeg_quality=70,                      
+            depth_max_m=10.0,
+            depth_quantization="mm",              
+            lz4_level=0,
+            add_seq=True,
+        )
+                
     
 
     def performAction(self, action: str, magnitude: float | None = None):
@@ -112,19 +124,12 @@ class ProcThorApp:
             return
         
         try:
-            depth_bytes = depth_frame.astype(np.float32).tobytes()
-            depth_b64 = base64.b64encode(depth_bytes).decode("utf-8")
-            payload = {
-                "timestamp": timestamp,
-                "height": depth_frame.shape[0],
-                "width": depth_frame.shape[1],
-                "encoding": "32FC1",
-                "dtype": "float32",
-                "data": depth_b64,
-            }
+            payload_bytes = self._codec.encode_depth(
+                depth_frame_m = depth_frame,
+                timestamp = timestamp,
+            )
 
-            serialized = json.dumps(payload, default=float)
-            self._redis.publish("ai2thor_depth_image", serialized)
+            self._redis.publish("ai2thor_depth_image", payload_bytes)
         except Exception as e:
             logger.error(f"Failed to publish depth data to Redis: {e}")
 
@@ -141,28 +146,18 @@ class ProcThorApp:
         
         
         try:
-            height, width, _ = rgb_frame.shape
+            payload_bytes = self._codec.encode_rgb(
+                rgb_frame = rgb_frame,
+                timestamp = timestamp,
+            )
 
-            rgb_bytes = rgb_frame.tobytes()
-            rgb_b64 = base64.b64encode(rgb_bytes).decode("utf-8")
-            payload = {
-                "timestamp": timestamp,
-                "height": height,
-                "width": width,
-                "encoding": "rgb8",
-                "dtype": "uint8",
-                "data": rgb_b64,
-            }
-
-            serialized = json.dumps(payload, default=float)
-            self._redis.publish("ai2thor_rgb_image", serialized)
+            self._redis.publish("ai2thor_rgb_image", payload_bytes)
         except Exception as e:
             logger.error(f"Failed to publish rgb data to Redis: {e}")
 
 
 
     def run(self, stdscr):
-
         self.setup()
 
         pubsub = self._redis.pubsub()
@@ -173,7 +168,6 @@ class ProcThorApp:
         last_idle_image_pub = 0.0
 
         try:
-            # TODO implementare push a hz predefiniti, non "ogni volta che succede qualcosa"
             while True:
                 msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
 
@@ -185,21 +179,25 @@ class ProcThorApp:
                         payload = json.loads(msg["data"])
                         command = payload.get("action")
                         magnitude = payload.get("magnitude")
+                        if magnitude is not None:
+                            magnitude = float(magnitude)
                     except Exception:
                         logger.exception("Failed to parse pubsub message")
                         command = None
+                        magnitude = None
 
-                if command is not None:
-                    act = command
-                else:
-                    act = "Pass" 
+                act = command if command is not None else "Pass"
 
+            
                 event = self.performAction(act, magnitude)
 
+
+                success = bool(event.metadata.get("lastActionSuccess"))
+                if not success and act != "Pass":
+                    self._log_action_failure(act, magnitude, event)
+
                 timestamp = time.time()
-
                 self.publish_pose_odom(event, timestamp)
-
 
                 publish_images = False
                 if act != "Pass":
@@ -216,10 +214,14 @@ class ProcThorApp:
                     self.publish_depth_data(event, timestamp)
                     self.publish_rgb_data(event, timestamp)
 
+                err = event.metadata.get("errorMessage", "") 
+                err_short = (err[:60] + "...") if len(err) > 60 else err
+
                 stdscr.addstr(
                     0, 0,
                     f"Last command: {command or 'None':<12}  Action: {act:<12}  "
-                    f"success={event.metadata.get('lastActionSuccess')}   "
+                    f"success={success}  "
+                    f"err={err_short:<62}"
                 )
                 stdscr.refresh()
 
@@ -229,6 +231,27 @@ class ProcThorApp:
                 logger.info("controller stopped cleanly")
             except Exception:
                 pass
+
+
+
+    def _log_action_failure(self, act, magnitude, event):
+        md = event.metadata or {}
+
+        error_msg = md.get("errorMessage", "")
+        last_action = md.get("lastAction", act)
+
+        failure_report = {
+            "reason": error_msg,
+            "act": last_action,
+            "magnitude": magnitude,
+            "success": md.get("lastActionSuccess"),
+            "sceneName": md.get("sceneName"),
+            "frameId": md.get("frameId"),
+        }
+
+        logger.warning("AI2-THOR action failed: %s", json.dumps(failure_report, ensure_ascii=False))
+
+
 
 def main(stdscr):
     ProcThorApp().run(stdscr)
