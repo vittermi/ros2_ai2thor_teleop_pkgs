@@ -3,15 +3,21 @@ from rclpy.node import Node # type: ignore
 
 import redis
 import threading
-import json
-import base64
 import numpy as np
 import math
+
+
 
 from sensor_msgs.msg import Image # type: ignore
 from sensor_msgs.msg import CameraInfo # type: ignore
 from std_msgs.msg import Header # type: ignore
 from builtin_interfaces.msg import Time # type: ignore
+
+from redis_image_codec import RedisImageCodec # type: ignore
+
+from rclpy.qos import qos_profile_sensor_data # type: ignore
+
+import sys
 
 
 class DepthImageAdapter(Node):
@@ -36,7 +42,7 @@ class DepthImageAdapter(Node):
         self.rgb_topic = self.get_parameter('rgb_topic').value
         self.frame_id = self.get_parameter('frame_id').value
 
-        self.depth_pub = self.create_publisher(Image, self.depth_topic, 10)
+        self.depth_pub = self.create_publisher(Image, self.depth_topic, qos_profile_sensor_data)
         self.camera_info_pub = self.create_publisher(CameraInfo, self.camera_info_topic, 10)
         self.rgb_pub = self.create_publisher(Image, self.rgb_topic, 10)
 
@@ -69,29 +75,26 @@ class DepthImageAdapter(Node):
                 continue
 
             try:
-                if isinstance(raw, bytes):
-                    raw = raw.decode('utf-8')
-                payload = json.loads(raw)
-                self._handle_message(payload, channel)
+                self._handle_message(raw, channel)
             except Exception as e:
                 self.get_logger().warn(f"Failed to decode Redis message: {e}")
         
 
 
-    def _handle_message(self, payload: dict, channel):
+    def _handle_message(self, payload_bytes: dict, channel):
         try:
+
+            payload = RedisImageCodec.decode(payload_bytes)
+
+            event_ts = float(payload['timestamp'])
             height = int(payload['height'])
             width = int(payload['width'])
-            encoding = payload['encoding']  # expected "32FC1"
-            dtype = payload['dtype']        # expected "float32"
-            data_b64 = payload['data']
-
-            raw_bytes = base64.b64decode(data_b64)
+            data = payload['data']
+            
         except Exception as e:
             self.get_logger().warn(f"Depth payload parsing error: {e}")
             return
         
-        event_ts = float(payload["timestamp"])
         sec = int(event_ts)
         nanosec = int((event_ts - sec) * 1e9)
 
@@ -99,24 +102,34 @@ class DepthImageAdapter(Node):
         
         self._handle_camera_info(width, height, stamp, self.frame_id)
 
-        msg = Image()
-        msg.header = Header()
-        msg.header.stamp = stamp
-        msg.header.frame_id = self.frame_id
+        ros_img = Image()
+        ros_img.header = Header()
+        ros_img.header.stamp = stamp
+        ros_img.header.frame_id = self.frame_id
 
-        msg.height = height
-        msg.width = width
-        msg.encoding = encoding
-        msg.is_bigendian = 0
-        msg.data = raw_bytes
-
+        ros_img.height = height
+        ros_img.width = width
+        ros_img.is_bigendian = 0
     
         if channel == self.redis_channel_depth.encode():
-            msg.step = width * 4  # 4 bytes per float32
-            self.depth_pub.publish(msg)
+            depth_f32 = np.asarray(data, dtype=np.float32)
+            if not depth_f32.flags["C_CONTIGUOUS"]:
+                depth_f32 = np.ascontiguousarray(depth_f32)
+
+            ros_img.encoding = "32FC1"
+
+            ros_img.step = width * 4  # 4 bytes per float32
+            ros_img.data = depth_f32.tobytes()
+            self.depth_pub.publish(ros_img)
         elif channel == self.redis_channel_rgb.encode():
-            msg.step = width * 3  # 4 bytes per float32
-            self.rgb_pub.publish(msg)
+            if not data.flags["C_CONTIGUOUS"]:
+                data = np.ascontiguousarray(data)
+
+            ros_img.encoding = "rgb8"
+            ros_img.step = width * 3  
+            ros_img.data = data.tobytes()
+
+            self.rgb_pub.publish(ros_img)
         else:
             self.get_logger().warn(f"Received message on unexpected channel: {channel}")
             return

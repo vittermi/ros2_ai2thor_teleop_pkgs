@@ -176,7 +176,7 @@ def generate_launch_description():
                 'range_min': 0.1,
                 'range_max': 1.0,
                 'scan_time': 0.033,
-                'scan_height': 200,
+                'scan_height': 50,
             }],
             remappings=[
                 ('depth', '/depth/image_raw'),

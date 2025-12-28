@@ -18,6 +18,7 @@ setup(
     install_requires=[
         'setuptools',
         'redis',
+        'redis_image_codec',
     ],
     zip_safe=True,
     maintainer='-',
