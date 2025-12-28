@@ -1,0 +1,8 @@
+pyproject.toml
+redis_image_codec/__init__.py
+redis_image_codec/codec.py
+redis_image_codec.egg-info/PKG-INFO
+redis_image_codec.egg-info/SOURCES.txt
+redis_image_codec.egg-info/dependency_links.txt
+redis_image_codec.egg-info/requires.txt
+redis_image_codec.egg-info/top_level.txt
